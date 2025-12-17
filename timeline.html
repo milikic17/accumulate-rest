@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Driver Timeline</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      padding: 40px;
+    }
+
+    .timeline-container {
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 12px;
+    }
+
+    .day-row {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .day-label {
+      width: 80px;
+      font-size: 0.85rem;
+      color: #5a6a7a;
+      flex-shrink: 0;
+    }
+
+    .timeline-track {
+      flex: 1;
+      height: 36px;
+      background: transparent;
+      border-radius: 4px;
+      position: relative;
+      overflow: visible;
+    }
+
+    .timeline-track::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #3a3a5a;
+      transform: translateY(-50%);
+      border-radius: 1px;
+    }
+
+
+    .status-block {
+      position: absolute;
+      top: 4px;
+      height: 28px;
+      border-radius: 3px;
+      cursor: grab;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      user-select: none;
+      transition: box-shadow 0.15s ease;
+      z-index: 1;
+    }
+
+    .status-block:hover {
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+    }
+
+    .status-block.dragging {
+      cursor: grabbing;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      z-index: 100;
+    }
+
+    .status-block.driving {
+      background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+    }
+
+    .status-block.on_duty {
+      background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    }
+
+    .status-block.off_duty {
+      background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+    }
+
+    .status-block.sleeper {
+      background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+    }
+
+    .status-block.off_duty {
+      cursor: pointer;
+    }
+
+    .gap-block {
+      position: absolute;
+      top: 4px;
+      height: 28px;
+      border-radius: 3px;
+      border: 2px dashed transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: transparent;
+      z-index: 0;
+      transition: all 0.15s ease;
+    }
+
+    .gap-block:hover,
+    .gap-block.hovered {
+      border-color: #7f8c8d;
+      color: rgba(127, 140, 141, 0.8);
+      background: rgba(127, 140, 141, 0.1);
+    }
+
+    .gap-block.multi-day:hover,
+    .gap-block.multi-day.hovered {
+      border-color: #9b59b6;
+      color: rgba(155, 89, 182, 0.9);
+      background: rgba(155, 89, 182, 0.15);
+    }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 20px;
+    }
+    
+    .add-day-btn {
+      width: 80px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      color: #2ecc71;
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+
+    .add-day-btn:hover {
+      color: #27ae60;
+    }
+
+    .time-axis {
+      position: relative;
+      flex: 1;
+      height: 20px;
+    }
+
+    .time-label {
+      position: absolute;
+      top: 4px;
+      font-size: 0.7rem;
+      color: #5a6a7a;
+      transform: translateX(-50%);
+    }
+    
+    .time-label:first-child {
+      transform: translateX(0);
+    }
+    
+    .time-label:last-child {
+      transform: translateX(-100%);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useCallback, useEffect } = React;
+
+    // Constants
+    const MINUTES_PER_DAY = 1440;
+    const TRACK_WIDTH_PERCENT = 100;
+
+    // Mock data: statuses with absolute start times (minutes from Day 1 midnight)
+    const initialStatuses = [
+      // Day 1 - morning work, afternoon gap, evening work
+      { id: '1', code: 'driving', startMinute: 420, duration: 150 },      // 7:00 - 9:30
+      { id: '2', code: 'on_duty', startMinute: 570, duration: 45 },       // 9:30 - 10:15
+      { id: '3', code: 'driving', startMinute: 780, duration: 120 },      // 13:00 - 15:00
+      { id: '4', code: 'driving', startMinute: 1080, duration: 90 },      // 18:00 - 19:30
+      
+      // Day 2 - scattered work
+      { id: '5', code: 'on_duty', startMinute: 1560, duration: 60 },      // 2:00 (Day 2) - 3:00
+      { id: '6', code: 'driving', startMinute: 1920, duration: 180 },     // 8:00 - 11:00
+      { id: '7', code: 'driving', startMinute: 2280, duration: 120 },     // 14:00 - 16:00
+      { id: '8', code: 'on_duty', startMinute: 2580, duration: 90 },      // 19:00 - 20:30
+      
+      // Day 3 - morning heavy, afternoon light
+      { id: '9', code: 'driving', startMinute: 3000, duration: 240 },     // 2:00 (Day 3) - 6:00
+      { id: '10', code: 'on_duty', startMinute: 3360, duration: 60 },     // 8:00 - 9:00
+      { id: '11', code: 'driving', startMinute: 3600, duration: 90 },     // 12:00 - 13:30
+      { id: '12', code: 'driving', startMinute: 4020, duration: 150 },    // 19:00 - 21:30
+
+      // Day 4 - midday work only
+      { id: '13', code: 'driving', startMinute: 4620, duration: 180 },    // 5:00 (Day 4) - 8:00
+      { id: '14', code: 'on_duty', startMinute: 5040, duration: 120 },    // 12:00 - 14:00
+      { id: '15', code: 'driving', startMinute: 5340, duration: 60 },     // 17:00 - 18:00
+    ];
+
+    let nextId = 100;
+
+    function App() {
+      const [numDays, setNumDays] = useState(5);
+      const [statuses, setStatuses] = useState(initialStatuses);
+      const [dragging, setDragging] = useState(null);
+      const [wasDragged, setWasDragged] = useState(false);
+      const [hoveredGapId, setHoveredGapId] = useState(null);
+      const trackRefs = useRef({});
+
+      // Calculate ALL gaps globally (across all days)
+      const getAllGaps = useCallback(() => {
+        const totalMinutes = numDays * MINUTES_PER_DAY;
+        const sorted = [...statuses].sort((a, b) => a.startMinute - b.startMinute);
+        
+        const gaps = [];
+        let currentEnd = 0;
+        let gapIndex = 0;
+        
+        for (const status of sorted) {
+          if (status.startMinute > currentEnd) {
+            gaps.push({
+              id: `gap-${gapIndex++}`,
+              startMinute: currentEnd,
+              duration: status.startMinute - currentEnd
+            });
+          }
+          currentEnd = Math.max(currentEnd, status.startMinute + status.duration);
+        }
+        
+        // Gap after last status until end of timeline
+        if (currentEnd < totalMinutes) {
+          gaps.push({
+            id: `gap-${gapIndex++}`,
+            startMinute: currentEnd,
+            duration: totalMinutes - currentEnd
+          });
+        }
+        
+        return gaps;
+      }, [statuses, numDays]);
+
+      // Get gaps visible on a specific day (with reference to full gap)
+      const getGapsForDay = useCallback((day) => {
+        const dayStart = day * MINUTES_PER_DAY;
+        const dayEnd = (day + 1) * MINUTES_PER_DAY;
+        const allGaps = getAllGaps();
+        
+        const dayGaps = [];
+        
+        for (const gap of allGaps) {
+          const gapEnd = gap.startMinute + gap.duration;
+          
+          // Check if gap overlaps with this day
+          if (gap.startMinute < dayEnd && gapEnd > dayStart) {
+            const visibleStart = Math.max(gap.startMinute, dayStart);
+            const visibleEnd = Math.min(gapEnd, dayEnd);
+            
+            dayGaps.push({
+              // Gap ID for hover tracking
+              id: gap.id,
+              // Full gap info (for creating the block)
+              startMinute: gap.startMinute,
+              duration: gap.duration,
+              // Visible portion on this day
+              visibleStart,
+              visibleEnd,
+              visibleDuration: visibleEnd - visibleStart
+            });
+          }
+        }
+        
+        return dayGaps;
+      }, [getAllGaps]);
+
+      const getStatusesForDay = useCallback((day) => {
+        const dayStart = day * MINUTES_PER_DAY;
+        const dayEnd = (day + 1) * MINUTES_PER_DAY;
+        
+        return statuses.filter(status => {
+          const statusEnd = status.startMinute + status.duration;
+          return status.startMinute < dayEnd && statusEnd > dayStart;
+        }).map(status => {
+          const dayStart = day * MINUTES_PER_DAY;
+          const dayEnd = (day + 1) * MINUTES_PER_DAY;
+          
+          // Clamp to day boundaries for rendering
+          const visibleStart = Math.max(status.startMinute, dayStart);
+          const visibleEnd = Math.min(status.startMinute + status.duration, dayEnd);
+          
+          return {
+            ...status,
+            visibleStart,
+            visibleEnd,
+            visibleDuration: visibleEnd - visibleStart,
+            clippedLeft: status.startMinute < dayStart,
+            clippedRight: status.startMinute + status.duration > dayEnd
+          };
+        });
+      }, [statuses]);
+
+      // Merge adjacent off_duty blocks
+      const mergeAdjacentOffDuty = useCallback((statusList) => {
+        const sorted = [...statusList].sort((a, b) => a.startMinute - b.startMinute);
+        const merged = [];
+        
+        for (const status of sorted) {
+          const last = merged[merged.length - 1];
+          
+          // Check if current and last are both off_duty and adjacent
+          if (last && 
+              last.code === 'off_duty' && 
+              status.code === 'off_duty' &&
+              last.startMinute + last.duration === status.startMinute) {
+            // Merge: extend the last one
+            last.duration += status.duration;
+          } else {
+            merged.push({ ...status });
+          }
+        }
+        
+        return merged;
+      }, []);
+
+      // Create off_duty block in a gap
+      const handleGapClick = useCallback((gap) => {
+        // Reset hover state to prevent stale highlights
+        setHoveredGapId(null);
+        
+        const newStatus = {
+          id: String(nextId++),
+          code: 'off_duty',
+          startMinute: gap.startMinute,
+          duration: gap.duration
+        };
+        setStatuses(prev => mergeAdjacentOffDuty([...prev, newStatus]));
+      }, [mergeAdjacentOffDuty]);
+
+      // Remove off_duty block
+      const handleOffDutyClick = useCallback((statusId) => {
+        setStatuses(prev => prev.filter(s => s.id !== statusId));
+      }, []);
+
+      const handleMouseDown = useCallback((e, statusId, day) => {
+        e.preventDefault();
+        const track = trackRefs.current[day];
+        if (!track) return;
+
+        const rect = track.getBoundingClientRect();
+        const status = statuses.find(s => s.id === statusId);
+        
+        setDragging({
+          statusId,
+          startX: e.clientX,
+          originalStartMinute: status.startMinute,
+          trackRect: rect,
+          day
+        });
+      }, [statuses]);
+
+      const handleMouseMove = useCallback((e) => {
+        if (!dragging) return;
+
+        const { statusId, startX, originalStartMinute, trackRect } = dragging;
+        const deltaX = e.clientX - startX;
+        
+        // Mark as dragged if moved more than 3 pixels
+        if (Math.abs(deltaX) > 3) {
+          setWasDragged(true);
+        }
+        
+        const minutesPerPixel = MINUTES_PER_DAY / trackRect.width;
+        const deltaMinutes = Math.round(deltaX * minutesPerPixel);
+        
+        let newStartMinute = originalStartMinute + deltaMinutes;
+        
+        // Clamp to valid range (0 to last day)
+        newStartMinute = Math.max(0, newStartMinute);
+        newStartMinute = Math.min(newStartMinute, (numDays * MINUTES_PER_DAY) - 1);
+
+        setStatuses(prev => {
+          const newStatuses = [...prev];
+          const draggedIndex = newStatuses.findIndex(s => s.id === statusId);
+          const draggedStatus = { ...newStatuses[draggedIndex] };
+          
+          const oldStart = draggedStatus.startMinute;
+          const movingRight = newStartMinute > oldStart;
+          const movingLeft = newStartMinute < oldStart;
+          
+          draggedStatus.startMinute = newStartMinute;
+          newStatuses[draggedIndex] = draggedStatus;
+
+          // Sort by start time for collision detection
+          const sorted = [...newStatuses].sort((a, b) => a.startMinute - b.startMinute);
+          const draggedSortedIndex = sorted.findIndex(s => s.id === statusId);
+
+          if (movingRight) {
+            // Push statuses to the right
+            for (let i = draggedSortedIndex; i < sorted.length - 1; i++) {
+              const current = sorted[i];
+              const next = sorted[i + 1];
+              const currentEnd = current.startMinute + current.duration;
+              
+              if (currentEnd > next.startMinute) {
+                const overlap = currentEnd - next.startMinute;
+                const nextIndex = newStatuses.findIndex(s => s.id === next.id);
+                newStatuses[nextIndex] = {
+                  ...newStatuses[nextIndex],
+                  startMinute: next.startMinute + overlap
+                };
+                sorted[i + 1] = newStatuses[nextIndex];
+              }
+            }
+          } else if (movingLeft) {
+            // Push statuses to the left
+            for (let i = draggedSortedIndex; i > 0; i--) {
+              const current = sorted[i];
+              const prev = sorted[i - 1];
+              const prevEnd = prev.startMinute + prev.duration;
+              
+              if (prevEnd > current.startMinute) {
+                const overlap = prevEnd - current.startMinute;
+                const prevIndex = newStatuses.findIndex(s => s.id === prev.id);
+                const newPrevStart = prev.startMinute - overlap;
+                
+                // Don't push past day 0
+                if (newPrevStart >= 0) {
+                  newStatuses[prevIndex] = {
+                    ...newStatuses[prevIndex],
+                    startMinute: newPrevStart
+                  };
+                  sorted[i - 1] = newStatuses[prevIndex];
+                } else {
+                  // Can't push further, stop the drag
+                  const adjustment = -newPrevStart;
+                  newStatuses[draggedIndex].startMinute += adjustment;
+                }
+              }
+            }
+          }
+
+          return newStatuses;
+        });
+      }, [dragging]);
+
+      const handleMouseUp = useCallback(() => {
+        // Merge any adjacent off_duty blocks after dragging
+        setStatuses(prev => mergeAdjacentOffDuty(prev));
+        setDragging(null);
+        // Reset wasDragged after a small delay so click handler can check it
+        setTimeout(() => setWasDragged(false), 10);
+      }, [mergeAdjacentOffDuty]);
+
+      useEffect(() => {
+        if (dragging) {
+          window.addEventListener('mousemove', handleMouseMove);
+          window.addEventListener('mouseup', handleMouseUp);
+          return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+          };
+        }
+      }, [dragging, handleMouseMove, handleMouseUp]);
+
+      return (
+        <div>
+          <div className="header-row">
+            <button className="add-day-btn" onClick={() => setNumDays(n => n + 1)}>
+              Add +
+            </button>
+            <div className="time-axis">
+              {Array.from({ length: 25 }, (_, i) => {
+                let label;
+                if (i === 0 || i === 24) label = 'M';
+                else if (i === 12) label = 'N';
+                else if (i > 12) label = i - 12;
+                else label = i;
+                const leftPercent = (i / 24) * 100;
+                return (
+                  <span key={i} className="time-label" style={{ left: `${leftPercent}%` }}>
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          <div className="timeline-container">
+            {Array.from({ length: numDays }, (_, day) => (
+              <DayRow
+                key={day}
+                day={day}
+                statuses={getStatusesForDay(day)}
+                gaps={getGapsForDay(day)}
+                onMouseDown={handleMouseDown}
+                onGapClick={handleGapClick}
+                onOffDutyClick={handleOffDutyClick}
+                draggingId={dragging?.statusId}
+                wasDragged={wasDragged}
+                hoveredGapId={hoveredGapId}
+                onGapHover={setHoveredGapId}
+                trackRef={(el) => trackRefs.current[day] = el}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function DayRow({ day, statuses, gaps, onMouseDown, onGapClick, onOffDutyClick, draggingId, wasDragged, hoveredGapId, onGapHover, trackRef }) {
+      return (
+        <div className="day-row">
+          <div className="day-label">Day {day + 1}</div>
+          <div className="timeline-track" ref={trackRef}>
+            {gaps.map((gap, i) => (
+              <GapBlock
+                key={`gap-${day}-${i}`}
+                gap={gap}
+                day={day}
+                onClick={onGapClick}
+                isHovered={hoveredGapId === gap.id}
+                onHover={onGapHover}
+              />
+            ))}
+            {statuses.map(status => (
+              <StatusBlock
+                key={`${status.id}-${day}`}
+                status={status}
+                day={day}
+                onMouseDown={onMouseDown}
+                onOffDutyClick={onOffDutyClick}
+                isDragging={draggingId === status.id}
+                wasDragged={wasDragged}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function formatDuration(minutes) {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hours}:${mins.toString().padStart(2, '0')}`;
+    }
+
+    function GapBlock({ gap, day, onClick, isHovered, onHover }) {
+      const dayStart = day * MINUTES_PER_DAY;
+      
+      const leftPercent = ((gap.visibleStart - dayStart) / MINUTES_PER_DAY) * 100;
+      const widthPercent = (gap.visibleDuration / MINUTES_PER_DAY) * 100;
+
+      // Check if gap spans multiple days
+      const spansMultipleDays = gap.duration > gap.visibleDuration;
+
+      const style = {
+        left: `${leftPercent}%`,
+        width: `${widthPercent}%`,
+      };
+
+      // Show "visible (total)" format for multi-day gaps
+      const visibleLabel = formatDuration(gap.visibleDuration);
+      const fullLabel = formatDuration(gap.duration);
+      const durationLabel = spansMultipleDays 
+        ? `${visibleLabel} (${fullLabel})`
+        : visibleLabel;
+
+      return (
+        <div
+          className={`gap-block ${spansMultipleDays ? 'multi-day' : ''} ${isHovered ? 'hovered' : ''}`}
+          style={style}
+          onClick={() => onClick(gap)}
+          onMouseEnter={() => onHover(gap.id)}
+          onMouseLeave={() => onHover(null)}
+          title={spansMultipleDays ? `Click to create ${fullLabel} off-duty block` : ''}
+        >
+          {widthPercent > 2.5 && durationLabel}
+        </div>
+      );
+    }
+
+    function StatusBlock({ status, day, onMouseDown, onOffDutyClick, isDragging, wasDragged }) {
+      const dayStart = day * MINUTES_PER_DAY;
+      
+      const leftPercent = ((status.visibleStart - dayStart) / MINUTES_PER_DAY) * 100;
+      const widthPercent = (status.visibleDuration / MINUTES_PER_DAY) * 100;
+
+      const style = {
+        left: `${leftPercent}%`,
+        width: `${widthPercent}%`,
+        borderTopLeftRadius: status.clippedLeft ? '0' : '3px',
+        borderBottomLeftRadius: status.clippedLeft ? '0' : '3px',
+        borderTopRightRadius: status.clippedRight ? '0' : '3px',
+        borderBottomRightRadius: status.clippedRight ? '0' : '3px',
+      };
+
+      const durationLabel = formatDuration(status.duration);
+
+      const handleClick = (e) => {
+        // Only delete off_duty if it wasn't dragged
+        if (status.code === 'off_duty' && !wasDragged) {
+          e.stopPropagation();
+          onOffDutyClick(status.id);
+        }
+      };
+
+      return (
+        <div
+          className={`status-block ${status.code} ${isDragging ? 'dragging' : ''}`}
+          style={style}
+          onMouseDown={(e) => onMouseDown(e, status.id, day)}
+          onClick={handleClick}
+        >
+          {widthPercent > 2.5 && durationLabel}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
+
