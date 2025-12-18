@@ -839,7 +839,8 @@
                   code,
                   startMinute,
                   duration,
-                  originalStartMinute: startMinute // Track original position for move detection
+                  originalStartMinute: startMinute, // Track original position for move detection
+                  originalTimestamp: eventStart.getTime() // Preserve original timestamp for ordering
                 };
                 
                 // Add tracking fields for rest segments
@@ -1403,17 +1404,31 @@
         const currentSorted = [...statuses].sort((a, b) => a.startMinute - b.startMinute);
         const originalSorted = [...originalStatuses].sort((a, b) => a.startMinute - b.startMinute);
         
-        // Helper to convert startMinute to timestamp
-        const toTimestamp = (minute) => {
-          return startDate.getTime() + (minute * 60 * 1000) + Math.floor(Math.random() * 60000);
+        // Helper to convert startMinute to timestamp, preserving original sub-minute offset
+        const toTimestamp = (minute, eventId) => {
+          const baseTimestamp = startDate.getTime() + (minute * 60 * 1000);
+          
+          // Try to find the original event to preserve its sub-minute offset
+          if (eventId) {
+            const original = originalSorted.find(s => s.id === eventId);
+            if (original?.originalTimestamp) {
+              // Extract the sub-minute portion (seconds + milliseconds) from original
+              const subMinuteOffset = original.originalTimestamp % 60000;
+              return baseTimestamp + subMinuteOffset;
+            }
+          }
+          
+          // Fallback: use a small deterministic offset based on position
+          // This ensures consistent ordering for new events
+          return baseTimestamp + 1000; // 1 second offset
         };
 
         // Step 1: Check all events (driving/on_duty/rest_segment) for moves
         for (const status of currentSorted) {
           if (status.originalStartMinute !== undefined && 
               status.startMinute !== status.originalStartMinute) {
-            // Status was moved
-            output[status.id] = toTimestamp(status.startMinute);
+            // Status was moved - pass ID to preserve original sub-minute offset
+            output[status.id] = toTimestamp(status.startMinute, status.id);
           }
         }
 
@@ -1608,7 +1623,7 @@
             if (originalRestAfterCurrent) {
               // There was a rest_segment here originally - MOVE it to fill the gap
               // (don't delete it, move it instead)
-              const newTimestamp = toTimestamp(gapStart);
+              const newTimestamp = toTimestamp(gapStart, originalRestAfterCurrent.id);
               output[originalRestAfterCurrent.id] = newTimestamp;
               // Remove any deletion that was added for this rest_segment
               // (it's being moved, not deleted)
@@ -1624,7 +1639,7 @@
               
               // Create off_duty if the gap is new or bigger than original
               if (gapDuration > Math.max(0, originalGapBetweenThese)) {
-                output[`off_duty_${newEventCounter++}`] = toTimestamp(gapStart);
+                output[`off_duty_${newEventCounter++}`] = toTimestamp(gapStart, null);
               }
             }
           }
