@@ -617,12 +617,14 @@
     }
 
     /**
-     * Format date as "Dec 15" style
+     * Format date as "Dec 15" style (Central Time)
      */
     function formatDateLabel(date) {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return `${months[date.getMonth()]} ${date.getDate()}`;
+      return date.toLocaleString('en-US', {
+        timeZone: 'America/Chicago',
+        month: 'short',
+        day: 'numeric'
+      });
     }
 
     /**
@@ -1553,6 +1555,7 @@
         const formatTime = (timestamp) => {
           const date = new Date(timestamp);
           return date.toLocaleString('en-US', { 
+            timeZone: 'America/Chicago',
             month: 'short', 
             day: 'numeric', 
             hour: 'numeric', 
@@ -1564,6 +1567,7 @@
         const formatMinute = (minute) => {
           const date = new Date(startDate.getTime() + minute * 60 * 1000);
           return date.toLocaleString('en-US', { 
+            timeZone: 'America/Chicago',
             month: 'short', 
             day: 'numeric', 
             hour: 'numeric', 
@@ -1636,7 +1640,7 @@
         }
         
         return {
-          ticketId: '6942f99277e09a17571c1d25',
+          ticketId: '69446e10b6fda75604fccaff',
           events
         };
       }, [statuses]);
