@@ -1715,15 +1715,44 @@
           return startDate.getTime() + minute * 60 * 1000;
         };
         
-        // LEFT SIDE: Current state (all events, sorted by time)
+        // LEFT SIDE: Current state + gap-filling rest_segments from output
         const currentEvents = statuses
           .map(s => ({
             id: s.id,
             code: s.code,
             timestamp: minuteToTimestamp(s.startMinute),
             time: formatTimestamp(minuteToTimestamp(s.startMinute))
-          }))
-          .sort((a, b) => a.timestamp - b.timestamp);
+          }));
+        
+        // Add gap-filling events from output (moved rest_segments and new off_duty)
+        for (const [key, value] of Object.entries(output)) {
+          if (key.startsWith('off_duty_')) {
+            // New off_duty event
+            currentEvents.push({
+              id: 'NEW',
+              code: 'off_duty',
+              timestamp: value,
+              time: formatTimestamp(value)
+            });
+          } else if (value !== null) {
+            // This is a move - check if it's a rest_segment not in current statuses (gap-filler)
+            const inCurrentStatuses = statuses.some(s => s.id === key);
+            if (!inCurrentStatuses) {
+              // This is a gap-filling rest_segment from original - add it
+              const original = originalStatuses.find(s => s.id === key);
+              if (original && original.code === 'rest_segment') {
+                currentEvents.push({
+                  id: key,
+                  code: 'rest_segment',
+                  timestamp: value,
+                  time: formatTimestamp(value)
+                });
+              }
+            }
+          }
+        }
+        
+        currentEvents.sort((a, b) => a.timestamp - b.timestamp);
         
         // RIGHT SIDE: Original state + output changes applied
         // Start with original events
