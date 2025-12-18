@@ -1717,12 +1717,19 @@
         
         // LEFT SIDE: Current state + gap-filling rest_segments from output
         const currentEvents = statuses
-          .map(s => ({
-            id: s.id,
-            code: s.code,
-            timestamp: minuteToTimestamp(s.startMinute),
-            time: formatTimestamp(minuteToTimestamp(s.startMinute))
-          }));
+          .map(s => {
+            // For rest_segment, get actual event code from originalEvents
+            let code = s.code;
+            if (s.code === 'rest_segment' && s.originalEvents?.[0]?.code) {
+              code = s.originalEvents[0].code;
+            }
+            return {
+              id: s.id,
+              code: code,
+              timestamp: minuteToTimestamp(s.startMinute),
+              time: formatTimestamp(minuteToTimestamp(s.startMinute))
+            };
+          });
         
         // Add gap-filling events from output (moved rest_segments and new off_duty)
         for (const [key, value] of Object.entries(output)) {
@@ -1741,9 +1748,11 @@
               // This is a gap-filling rest_segment from original - add it
               const original = originalStatuses.find(s => s.id === key);
               if (original && original.code === 'rest_segment') {
+                // Get the actual event code from originalEvents
+                const actualCode = original.originalEvents?.[0]?.code || 'off_duty';
                 currentEvents.push({
                   id: key,
-                  code: 'rest_segment',
+                  code: actualCode,
                   timestamp: value,
                   time: formatTimestamp(value)
                 });
@@ -1757,12 +1766,19 @@
         // RIGHT SIDE: Original state + output changes applied
         // Start with original events
         const originalEvents = originalStatuses
-          .map(s => ({
-            id: s.id,
-            code: s.code,
-            timestamp: minuteToTimestamp(s.originalStartMinute ?? s.startMinute),
-            time: formatTimestamp(minuteToTimestamp(s.originalStartMinute ?? s.startMinute))
-          }));
+          .map(s => {
+            // For rest_segment, get actual event code from originalEvents
+            let code = s.code;
+            if (s.code === 'rest_segment' && s.originalEvents?.[0]?.code) {
+              code = s.originalEvents[0].code;
+            }
+            return {
+              id: s.id,
+              code: code,
+              timestamp: minuteToTimestamp(s.originalStartMinute ?? s.startMinute),
+              time: formatTimestamp(minuteToTimestamp(s.originalStartMinute ?? s.startMinute))
+            };
+          });
         
         // Apply output changes
         const simulatedEvents = [...originalEvents];
@@ -1822,9 +1838,27 @@
               eventCode: null
             });
           } else {
-            // Moved event - look up eventCode from statuses
-            const status = statuses.find(s => s.id === key);
-            const eventCode = status?.code || 'unknown';
+            // Moved event - look up eventCode from statuses or originalStatuses
+            let status = statuses.find(s => s.id === key);
+            let eventCode;
+            
+            if (status) {
+              // For rest_segment, get actual code from originalEvents
+              if (status.code === 'rest_segment' && status.originalEvents?.[0]?.code) {
+                eventCode = status.originalEvents[0].code;
+              } else {
+                eventCode = status.code;
+              }
+            } else {
+              // Not in current statuses - check originalStatuses (gap-filler)
+              const original = originalStatuses.find(s => s.id === key);
+              if (original?.code === 'rest_segment' && original.originalEvents?.[0]?.code) {
+                eventCode = original.originalEvents[0].code;
+              } else {
+                eventCode = original?.code || 'unknown';
+              }
+            }
+            
             events.push({
               _id: key,
               eventCode: eventCode,
