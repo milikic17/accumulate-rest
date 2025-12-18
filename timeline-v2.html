@@ -870,10 +870,14 @@
                 return baseStatus;
               });
               
-              console.log('Mapped statuses (before merge):', mappedStatuses);
+              console.log('Mapped statuses (before filter):', mappedStatuses);
+              
+              // Filter out 0-duration events (sub-minute transition markers)
+              const filteredStatuses = mappedStatuses.filter(s => s.duration > 0);
+              console.log('After filtering 0-duration events:', filteredStatuses);
               
               // Merge adjacent rest_segment blocks, then trim excess rest
-              const mergedStatuses = mergeAdjacentRestSegments(mappedStatuses);
+              const mergedStatuses = mergeAdjacentRestSegments(filteredStatuses);
               const trimmedStatuses = trimExcessRest(mergedStatuses);
               
               console.log('Merged statuses:', mergedStatuses);
