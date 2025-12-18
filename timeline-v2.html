@@ -1588,44 +1588,42 @@
           }
         }
 
-        // Step 4: Check for NEW rest periods (gaps created by user dragging activities apart)
-        // Only create off_duty if there was NO rest segment between these two activities originally
+        // Step 4: Check for gaps and either move existing rest_segment or create new off_duty
         let newEventCounter = 0;
         for (let i = 0; i < currentSorted.length - 1; i++) {
           const current = currentSorted[i];
           const next = currentSorted[i + 1];
           
-          // Only check gaps between driving/on_duty activities
-          if ((current.code === 'driving' || current.code === 'on_duty') &&
-              (next.code === 'driving' || next.code === 'on_duty')) {
+          const gapStart = current.startMinute + current.duration;
+          const gapDuration = next.startMinute - gapStart;
+          
+          // If there's a gap > 0, we need to fill it
+          if (gapDuration > 0) {
+            // Check if there was originally a rest_segment after this event (by afterId)
+            const originalRestAfterCurrent = originalSorted.find(s => 
+              s.code === 'rest_segment' && s.afterId === current.id
+            );
             
-            const gapStart = current.startMinute + current.duration;
-            const gapDuration = next.startMinute - gapStart;
-            
-            if (gapDuration > 0) {
-              // There's a gap - check if there was originally a rest segment between these two activities
-              // Look for a rest segment where afterId === current.id AND beforeId === next.id
-              const hadRestBetween = originalSorted.some(s => 
-                s.code === 'rest_segment' && 
-                s.afterId === current.id && 
-                s.beforeId === next.id
-              );
+            if (originalRestAfterCurrent) {
+              // There was a rest_segment here originally - MOVE it to fill the gap
+              // (don't delete it, move it instead)
+              const newTimestamp = toTimestamp(gapStart);
+              output[originalRestAfterCurrent.id] = newTimestamp;
+              // Remove any deletion that was added for this rest_segment
+              // (it's being moved, not deleted)
+            } else {
+              // No original rest_segment here - check if we need a new off_duty
+              const originalCurrent = originalSorted.find(s => s.id === current.id);
+              const originalNext = originalSorted.find(s => s.id === next.id);
               
-              if (!hadRestBetween) {
-                // No rest existed between these activities originally - this is a NEW gap
-                // Check if they were originally adjacent (no gap)
-                const originalCurrent = originalSorted.find(s => s.id === current.id);
-                const originalNext = originalSorted.find(s => s.id === next.id);
-                
-                if (originalCurrent && originalNext) {
-                  const originalGap = originalNext.startMinute - (originalCurrent.startMinute + originalCurrent.duration);
-                  
-                  // Only create off_duty if the gap is larger than it was originally
-                  if (gapDuration > originalGap) {
-                    // Use unique key for each new event to avoid overwriting
-                    output[`off_duty_${newEventCounter++}`] = toTimestamp(gapStart);
-                  }
-                }
+              let originalGapBetweenThese = 0;
+              if (originalCurrent && originalNext) {
+                originalGapBetweenThese = originalNext.startMinute - (originalCurrent.startMinute + originalCurrent.duration);
+              }
+              
+              // Create off_duty if the gap is new or bigger than original
+              if (gapDuration > Math.max(0, originalGapBetweenThese)) {
+                output[`off_duty_${newEventCounter++}`] = toTimestamp(gapStart);
               }
             }
           }
