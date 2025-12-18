@@ -735,6 +735,7 @@
       const [subMinuteOffsets, setSubMinuteOffsets] = useState({}); // Maps eventId -> original seconds/ms offset
       const [isLoading, setIsLoading] = useState(true); // Loading state
       const [loadError, setLoadError] = useState(null); // Error message if loading fails
+      const [subMinuteEventsDialog, setSubMinuteEventsDialog] = useState(null); // Shows filtered sub-minute events
       
       // Refs for track elements (needed for drag calculations)
       const trackRefs = useRef({});
@@ -872,9 +873,33 @@
               
               console.log('Mapped statuses (before filter):', mappedStatuses);
               
-              // Filter out 0-duration events (sub-minute transition markers)
-              const filteredStatuses = mappedStatuses.filter(s => s.duration > 0);
-              console.log('After filtering 0-duration events:', filteredStatuses);
+              // Find sub-minute events (duration < 1 minute) that will be filtered out
+              const subMinuteEvents = mappedStatuses.filter(s => s.duration < 1);
+              if (subMinuteEvents.length > 0) {
+                // Format for display with time
+                const formatTime = (minute) => {
+                  const date = new Date(dayStart.getTime() + minute * 60 * 1000);
+                  return date.toLocaleString('en-US', {
+                    timeZone: 'America/Chicago',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  });
+                };
+                const eventsInfo = subMinuteEvents.map(s => ({
+                  id: s.id,
+                  code: s.code,
+                  time: formatTime(s.startMinute),
+                  duration: s.duration
+                }));
+                setSubMinuteEventsDialog(eventsInfo);
+              }
+              
+              // Filter out sub-minute events (duration < 1 minute)
+              const filteredStatuses = mappedStatuses.filter(s => s.duration >= 1);
+              console.log('After filtering sub-minute events:', filteredStatuses);
               
               // Merge adjacent rest_segment blocks, then trim excess rest
               const mergedStatuses = mergeAdjacentRestSegments(filteredStatuses);
@@ -2211,6 +2236,46 @@
               onConfirm={applyMove}
               onCancel={() => setMoveDialog(null)}
             />
+          )}
+
+          {/* Sub-minute Events Dialog */}
+          {subMinuteEventsDialog && (
+            <div className="dialog-overlay" onClick={() => setSubMinuteEventsDialog(null)}>
+              <div className="output-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                <div className="dialog-title">⚠️ Sub-minute Events Filtered</div>
+                <p style={{ color: '#aaa', marginBottom: '12px' }}>
+                  The following {subMinuteEventsDialog.length} event(s) have duration less than 1 minute and will be excluded:
+                </p>
+                <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '16px' }}>
+                  {subMinuteEventsDialog.map((evt, idx) => (
+                    <div key={idx} style={{ 
+                      padding: '8px 12px', 
+                      background: '#2a2a2a', 
+                      borderRadius: '4px', 
+                      marginBottom: '6px',
+                      fontSize: '13px'
+                    }}>
+                      <span style={{ color: evt.code === 'driving' ? '#4dabf7' : evt.code === 'on_duty' ? '#ffd43b' : '#69db7c' }}>
+                        {evt.code}
+                      </span>
+                      <span style={{ color: '#888', marginLeft: '8px' }}>
+                        at {evt.time}
+                      </span>
+                      <span style={{ color: '#666', marginLeft: '8px' }}>
+                        ({evt.duration} min)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <button 
+                  className="dialog-btn" 
+                  onClick={() => setSubMinuteEventsDialog(null)}
+                  style={{ width: '100%' }}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Notification Toast */}
