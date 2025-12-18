@@ -2224,6 +2224,27 @@
                           className="dialog-btn cancel"
                           style={{ flex: 1 }}
                           onClick={() => {
+                            // Compute differences between left and right
+                            const diffs = [];
+                            const maxLen = Math.max(comparison.left.length, comparison.right.length);
+                            for (let i = 0; i < maxLen; i++) {
+                              const left = comparison.left[i];
+                              const right = comparison.right[i];
+                              if (!left && right) {
+                                diffs.push({ type: 'missing_left', index: i, right });
+                              } else if (left && !right) {
+                                diffs.push({ type: 'missing_right', index: i, left });
+                              } else if (left && right) {
+                                if (left.id !== right.id) {
+                                  diffs.push({ type: 'different_event', index: i, left, right });
+                                } else if (left.code !== right.code) {
+                                  diffs.push({ type: 'different_code', index: i, left, right });
+                                } else if (Math.abs(left.timestamp - right.timestamp) >= 60000) {
+                                  diffs.push({ type: 'time_mismatch', index: i, left, right, diff_ms: left.timestamp - right.timestamp });
+                                }
+                              }
+                            }
+                            
                             const debugData = {
                               originalState: originalStatuses.map(s => ({
                                 id: s.id,
@@ -2242,8 +2263,11 @@
                               output: JSON.parse(outputModal),
                               comparison: {
                                 left: comparison.left,
-                                right: comparison.right
-                              }
+                                right: comparison.right,
+                                isMatch: isMatch,
+                                differences: diffs
+                              },
+                              subMinuteOffsets: subMinuteOffsets
                             };
                             navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
                             setNotification('Debug info copied to clipboard!');
