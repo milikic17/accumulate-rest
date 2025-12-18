@@ -503,6 +503,77 @@
       white-space: pre-wrap;
     }
 
+    /* Comparison view */
+    .compare-container {
+      display: flex;
+      gap: 16px;
+      max-height: 400px;
+    }
+
+    .compare-side {
+      flex: 1;
+      background: rgb(24, 30, 35);
+      border-radius: 4px;
+      padding: 12px;
+      overflow: auto;
+    }
+
+    .compare-title {
+      font-size: 0.75rem;
+      color: #7f8c9a;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #3a3a5a;
+    }
+
+    .compare-event {
+      font-size: 0.8rem;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(58, 58, 90, 0.5);
+    }
+
+    .compare-event:last-child {
+      border-bottom: none;
+    }
+
+    .compare-event .code {
+      color: #2ecc71;
+      font-weight: 500;
+    }
+
+    .compare-event .code.on_duty {
+      color: #3498db;
+    }
+
+    .compare-event .code.off_duty {
+      color: #9b59b6;
+    }
+
+    .compare-event .time {
+      color: #eee;
+    }
+
+    .compare-event .id {
+      color: #5a6a7a;
+      font-size: 0.7rem;
+    }
+
+    .compare-match {
+      color: #2ecc71;
+      text-align: center;
+      padding: 12px;
+      font-size: 0.9rem;
+    }
+
+    .compare-mismatch {
+      color: #e74c3c;
+      text-align: center;
+      padding: 12px;
+      font-size: 0.9rem;
+    }
+
     /* Notification toast */
     .notification {
       position: fixed;
@@ -1606,6 +1677,85 @@
       }, [statuses, originalStatuses, startDate]);
 
       /**
+       * Generate comparison data: current state vs original+changes
+       */
+      const generateComparisonData = useCallback((output) => {
+        if (!startDate) return { left: [], right: [] };
+        
+        const formatTimestamp = (timestamp) => {
+          const date = new Date(timestamp);
+          return date.toLocaleString('en-US', { 
+            timeZone: 'America/Chicago',
+            month: 'short', 
+            day: 'numeric', 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+          });
+        };
+        
+        const minuteToTimestamp = (minute) => {
+          return startDate.getTime() + minute * 60 * 1000;
+        };
+        
+        // LEFT SIDE: Current state (driving/on_duty only, sorted by time)
+        const currentEvents = statuses
+          .filter(s => s.code === 'driving' || s.code === 'on_duty')
+          .map(s => ({
+            id: s.id,
+            code: s.code,
+            timestamp: minuteToTimestamp(s.startMinute),
+            time: formatTimestamp(minuteToTimestamp(s.startMinute))
+          }))
+          .sort((a, b) => a.timestamp - b.timestamp);
+        
+        // RIGHT SIDE: Original state + output changes applied
+        // Start with original events
+        const originalEvents = originalStatuses
+          .filter(s => s.code === 'driving' || s.code === 'on_duty')
+          .map(s => ({
+            id: s.id,
+            code: s.code,
+            timestamp: minuteToTimestamp(s.originalStartMinute ?? s.startMinute),
+            time: formatTimestamp(minuteToTimestamp(s.originalStartMinute ?? s.startMinute))
+          }));
+        
+        // Apply output changes
+        const simulatedEvents = [...originalEvents];
+        
+        for (const [key, value] of Object.entries(output)) {
+          if (key === 'off_duty') {
+            // New event - add it
+            simulatedEvents.push({
+              id: 'NEW',
+              code: 'off_duty',
+              timestamp: value,
+              time: formatTimestamp(value)
+            });
+          } else if (value === null) {
+            // Deletion - remove it
+            const idx = simulatedEvents.findIndex(e => e.id === key);
+            if (idx !== -1) simulatedEvents.splice(idx, 1);
+          } else {
+            // Move - update timestamp
+            const evt = simulatedEvents.find(e => e.id === key);
+            if (evt) {
+              evt.timestamp = value;
+              evt.time = formatTimestamp(value);
+            }
+          }
+        }
+        
+        // Sort by timestamp
+        simulatedEvents.sort((a, b) => a.timestamp - b.timestamp);
+        
+        return {
+          left: currentEvents,
+          right: simulatedEvents
+        };
+      }, [statuses, originalStatuses, startDate]);
+
+      /**
        * Format output for the API webhook
        * Transforms { eventId: timestamp/null, "off_duty": timestamp } 
        * to { ticketId, events: [{ _id, eventCode, eventTime }] }
@@ -1918,6 +2068,12 @@
                     Summary
                   </button>
                   <button 
+                    className={`output-tab ${outputTab === 'compare' ? 'active' : ''}`}
+                    onClick={() => setOutputTab('compare')}
+                  >
+                    Compare
+                  </button>
+                  <button 
                     className={`output-tab ${outputTab === 'json' ? 'active' : ''}`}
                     onClick={() => setOutputTab('json')}
                   >
@@ -1926,11 +2082,51 @@
                 </div>
                 
                 {/* Tab Content */}
-                {outputTab === 'human' ? (
+                {outputTab === 'human' && (
                   <div className="output-human">
                     {formatOutputHuman(JSON.parse(outputModal))}
                   </div>
-                ) : (
+                )}
+                {outputTab === 'compare' && (() => {
+                  const comparison = generateComparisonData(JSON.parse(outputModal));
+                  const isMatch = comparison.left.length === comparison.right.length &&
+                    comparison.left.every((evt, i) => {
+                      const other = comparison.right[i];
+                      return other && evt.id === other.id && Math.abs(evt.timestamp - other.timestamp) < 60000;
+                    });
+                  return (
+                    <div>
+                      <div className="compare-container">
+                        <div className="compare-side">
+                          <div className="compare-title">Current State (Our Timeline)</div>
+                          {comparison.left.map((evt, i) => (
+                            <div key={i} className="compare-event">
+                              <span className={`code ${evt.code}`}>{evt.code}</span>
+                              {' '}<span className="time">{evt.time}</span>
+                              {' '}<span className="id">{evt.id.slice(-6)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="compare-side">
+                          <div className="compare-title">Original + Changes (Server Result)</div>
+                          {comparison.right.map((evt, i) => (
+                            <div key={i} className="compare-event">
+                              <span className={`code ${evt.code}`}>{evt.code}</span>
+                              {' '}<span className="time">{evt.time}</span>
+                              {' '}<span className="id">{evt.id === 'NEW' ? 'NEW' : evt.id.slice(-6)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {isMatch ? (
+                        <div className="compare-match">✓ Both sides match!</div>
+                      ) : (
+                        <div className="compare-mismatch">✗ Mismatch detected - check events above</div>
+                      )}
+                    </div>
+                  );
+                })()}
+                {outputTab === 'json' && (
                   <pre>{outputModal}</pre>
                 )}
                 
