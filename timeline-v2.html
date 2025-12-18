@@ -1426,12 +1426,43 @@
         };
 
         // Step 1: Check all events (driving/on_duty/rest_segment) for moves
+        // First, collect all moved events with their target minute
+        const movedEvents = [];
         for (const status of currentSorted) {
           if (status.originalStartMinute !== undefined && 
               status.startMinute !== status.originalStartMinute) {
-            // Status was moved - pass ID to preserve original sub-minute offset
-            output[status.id] = toTimestamp(status.startMinute, status.id);
+            movedEvents.push({
+              id: status.id,
+              targetMinute: status.startMinute,
+              originalStartMinute: status.originalStartMinute
+            });
           }
+        }
+        
+        // Group moved events by target minute to fix same-minute ordering
+        const byTargetMinute = {};
+        for (const evt of movedEvents) {
+          if (!byTargetMinute[evt.targetMinute]) {
+            byTargetMinute[evt.targetMinute] = [];
+          }
+          byTargetMinute[evt.targetMinute].push(evt);
+        }
+        
+        // For each minute group, sort by originalStartMinute and assign sequential offsets
+        for (const [minute, events] of Object.entries(byTargetMinute)) {
+          // Sort by originalStartMinute to preserve relative order, then by original sub-minute offset
+          events.sort((a, b) => {
+            if (a.originalStartMinute !== b.originalStartMinute) {
+              return a.originalStartMinute - b.originalStartMinute;
+            }
+            return (subMinuteOffsets[a.id] || 0) - (subMinuteOffsets[b.id] || 0);
+          });
+          
+          // Assign sequential timestamps (0s, 1s, 2s, ...) to preserve order
+          const baseTimestamp = startDate.getTime() + parseInt(minute) * 60 * 1000;
+          events.forEach((evt, idx) => {
+            output[evt.id] = baseTimestamp + idx * 1000; // Sequential 1-second offsets
+          });
         }
 
         // Step 2: Calculate current gaps (space between adjacent statuses)
@@ -1740,14 +1771,42 @@
         };
         
         // LEFT SIDE: Current state + gap-filling rest_segments from output
-        const currentEvents = statuses
+        // First, group events by their current startMinute to handle same-minute ordering
+        const statusesSorted = [...statuses].sort((a, b) => {
+          // Primary sort by current startMinute
+          if (a.startMinute !== b.startMinute) return a.startMinute - b.startMinute;
+          // Secondary sort by originalStartMinute to preserve relative order
+          const aOrig = a.originalStartMinute ?? a.startMinute;
+          const bOrig = b.originalStartMinute ?? b.startMinute;
+          if (aOrig !== bOrig) return aOrig - bOrig;
+          // Tertiary sort by sub-minute offset
+          return (subMinuteOffsets[a.id] || 0) - (subMinuteOffsets[b.id] || 0);
+        });
+        
+        // Assign sequential sub-second offsets for events at the same minute
+        let currentMinute = null;
+        let offsetCounter = 0;
+        const adjustedTimestamps = new Map();
+        
+        for (const s of statusesSorted) {
+          if (s.startMinute !== currentMinute) {
+            currentMinute = s.startMinute;
+            offsetCounter = 0;
+          }
+          // Use sequential offset (0, 1000, 2000, ...) to preserve sort order
+          const base = startDate.getTime() + s.startMinute * 60 * 1000;
+          adjustedTimestamps.set(s.id, base + offsetCounter * 1000);
+          offsetCounter++;
+        }
+        
+        const currentEvents = statusesSorted
           .map(s => {
             // For rest_segment, get actual event code from originalEvents
             let code = s.code;
             if (s.code === 'rest_segment' && s.originalEvents?.[0]?.code) {
               code = s.originalEvents[0].code;
             }
-            const ts = minuteToTimestamp(s.startMinute, s.id);
+            const ts = adjustedTimestamps.get(s.id);
             return {
               id: s.id,
               code: code,
