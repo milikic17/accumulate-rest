@@ -730,6 +730,7 @@
       const [outputModal, setOutputModal] = useState(null); // Generated output JSON
       const [outputTab, setOutputTab] = useState('human'); // 'human' or 'json'
       const [notification, setNotification] = useState(null); // Notification message
+      const [differencesModal, setDifferencesModal] = useState(null); // Differences data for modal
       const [originalStatuses, setOriginalStatuses] = useState([]); // Original state for comparison at output
       const [isLoading, setIsLoading] = useState(true); // Loading state
       const [loadError, setLoadError] = useState(null); // Error message if loading fails
@@ -2201,38 +2202,76 @@
                       ) : (
                         <div className="compare-mismatch">✗ Mismatch detected - check events above</div>
                       )}
-                      <button
-                        className="dialog-btn cancel"
-                        style={{ marginTop: '12px', width: '100%' }}
-                        onClick={() => {
-                          const debugData = {
-                            originalState: originalStatuses.map(s => ({
-                              id: s.id,
-                              code: s.code,
-                              startMinute: s.startMinute,
-                              duration: s.duration,
-                              originalStartMinute: s.originalStartMinute
-                            })),
-                            currentState: statuses.map(s => ({
-                              id: s.id,
-                              code: s.code,
-                              startMinute: s.startMinute,
-                              duration: s.duration,
-                              originalStartMinute: s.originalStartMinute
-                            })),
-                            output: JSON.parse(outputModal),
-                            comparison: {
-                              left: comparison.left,
-                              right: comparison.right
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                        <button
+                          className="dialog-btn cancel"
+                          style={{ flex: 1 }}
+                          onClick={() => {
+                            const debugData = {
+                              originalState: originalStatuses.map(s => ({
+                                id: s.id,
+                                code: s.code,
+                                startMinute: s.startMinute,
+                                duration: s.duration,
+                                originalStartMinute: s.originalStartMinute
+                              })),
+                              currentState: statuses.map(s => ({
+                                id: s.id,
+                                code: s.code,
+                                startMinute: s.startMinute,
+                                duration: s.duration,
+                                originalStartMinute: s.originalStartMinute
+                              })),
+                              output: JSON.parse(outputModal),
+                              comparison: {
+                                left: comparison.left,
+                                right: comparison.right
+                              }
+                            };
+                            navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
+                            setNotification('Debug info copied to clipboard!');
+                            setTimeout(() => setNotification(null), 2000);
+                          }}
+                        >
+                          Copy Debug Info
+                        </button>
+                        <button
+                          className="dialog-btn"
+                          style={{ 
+                            flex: 1, 
+                            background: isMatch ? '#555' : '#e74c3c',
+                            cursor: isMatch ? 'not-allowed' : 'pointer',
+                            opacity: isMatch ? 0.5 : 1
+                          }}
+                          disabled={isMatch}
+                          onClick={() => {
+                            // Find differences between left and right
+                            const diffs = [];
+                            const maxLen = Math.max(comparison.left.length, comparison.right.length);
+                            
+                            for (let i = 0; i < maxLen; i++) {
+                              const left = comparison.left[i];
+                              const right = comparison.right[i];
+                              
+                              if (!left && right) {
+                                diffs.push({ type: 'missing_left', index: i, right });
+                              } else if (left && !right) {
+                                diffs.push({ type: 'missing_right', index: i, left });
+                              } else if (left && right) {
+                                if (left.id !== right.id) {
+                                  diffs.push({ type: 'id_mismatch', index: i, left, right });
+                                } else if (Math.abs(left.timestamp - right.timestamp) >= 60000) {
+                                  diffs.push({ type: 'time_mismatch', index: i, left, right });
+                                }
+                              }
                             }
-                          };
-                          navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
-                          setNotification('Debug info copied to clipboard!');
-                          setTimeout(() => setNotification(null), 2000);
-                        }}
-                      >
-                        Copy Debug Info
-                      </button>
+                            
+                            setDifferencesModal(diffs);
+                          }}
+                        >
+                          Show Differences
+                        </button>
+                      </div>
                     </div>
                   );
                 })()}
@@ -2290,6 +2329,60 @@
                     className="dialog-btn cancel" 
                     onClick={() => setOutputModal(null)}
                   >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Differences Modal */}
+          {differencesModal && (
+            <div className="dialog-overlay" onClick={() => setDifferencesModal(null)}>
+              <div className="output-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+                <div className="dialog-title">Differences Found ({differencesModal.length})</div>
+                <div style={{ maxHeight: '400px', overflowY: 'auto', padding: '12px 0' }}>
+                  {differencesModal.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: '#888' }}>No differences found</p>
+                  ) : (
+                    differencesModal.map((diff, i) => (
+                      <div key={i} style={{ 
+                        background: 'rgba(231, 76, 60, 0.1)', 
+                        border: '1px solid rgba(231, 76, 60, 0.3)',
+                        borderRadius: '6px',
+                        padding: '10px',
+                        marginBottom: '8px'
+                      }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '6px', color: '#e74c3c' }}>
+                          {diff.type === 'missing_left' && `#${diff.index + 1}: Missing from Current (Left)`}
+                          {diff.type === 'missing_right' && `#${diff.index + 1}: Missing from Server (Right)`}
+                          {diff.type === 'id_mismatch' && `#${diff.index + 1}: Different Events at Position`}
+                          {diff.type === 'time_mismatch' && `#${diff.index + 1}: Time Mismatch (>1 min)`}
+                        </div>
+                        <div style={{ fontSize: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                          <div>
+                            <div style={{ color: '#888', marginBottom: '2px' }}>Current (Left):</div>
+                            {diff.left ? (
+                              <div><span style={{ color: '#2ecc71' }}>{diff.left.code}</span> {diff.left.time} <span style={{ color: '#666' }}>{diff.left.id === 'NEW' ? 'NEW' : diff.left.id.slice(-6)}</span></div>
+                            ) : (
+                              <div style={{ color: '#888' }}>— missing —</div>
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ color: '#888', marginBottom: '2px' }}>Server (Right):</div>
+                            {diff.right ? (
+                              <div><span style={{ color: '#3498db' }}>{diff.right.code}</span> {diff.right.time} <span style={{ color: '#666' }}>{diff.right.id === 'NEW' ? 'NEW' : diff.right.id.slice(-6)}</span></div>
+                            ) : (
+                              <div style={{ color: '#888' }}>— missing —</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="dialog-buttons">
+                  <button className="dialog-btn cancel" onClick={() => setDifferencesModal(null)}>
                     Close
                   </button>
                 </div>
