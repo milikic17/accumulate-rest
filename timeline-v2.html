@@ -732,6 +732,7 @@
       const [notification, setNotification] = useState(null); // Notification message
       const [differencesModal, setDifferencesModal] = useState(null); // Differences data for modal
       const [originalStatuses, setOriginalStatuses] = useState([]); // Original state for comparison at output
+      const [subMinuteOffsets, setSubMinuteOffsets] = useState({}); // Maps eventId -> original seconds/ms offset
       const [isLoading, setIsLoading] = useState(true); // Loading state
       const [loadError, setLoadError] = useState(null); // Error message if loading fails
       
@@ -791,6 +792,13 @@
                 new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime()
               );
               
+              // Build sub-minute offsets lookup: eventId -> seconds/ms portion of original timestamp
+              const offsets = {};
+              sorted.forEach(event => {
+                const timestamp = new Date(event.eventTime).getTime();
+                offsets[event._id] = timestamp % 60000; // Extract seconds + milliseconds (0-59999)
+              });
+              
               // Get the start of the first event's day (midnight)
               const firstEventTime = new Date(sorted[0].eventTime);
               const dayStart = new Date(firstEventTime);
@@ -839,8 +847,7 @@
                   code,
                   startMinute,
                   duration,
-                  originalStartMinute: startMinute, // Track original position for move detection
-                  originalTimestamp: eventStart.getTime() // Preserve original timestamp for ordering
+                  originalStartMinute: startMinute // Track original position for move detection
                 };
                 
                 // Add tracking fields for rest segments
@@ -928,6 +935,7 @@
               setStatuses(trimmedStatuses);
               // Save MERGED statuses (before trim) so we keep track of rest segments that were removed entirely
               setOriginalStatuses(mergedStatuses);
+              setSubMinuteOffsets(offsets); // Store original sub-minute offsets for timestamp precision
               setIsLoading(false);
             })
             .catch(err => {
@@ -1408,19 +1416,13 @@
         const toTimestamp = (minute, eventId) => {
           const baseTimestamp = startDate.getTime() + (minute * 60 * 1000);
           
-          // Try to find the original event to preserve its sub-minute offset
-          if (eventId) {
-            const original = originalSorted.find(s => s.id === eventId);
-            if (original?.originalTimestamp) {
-              // Extract the sub-minute portion (seconds + milliseconds) from original
-              const subMinuteOffset = original.originalTimestamp % 60000;
-              return baseTimestamp + subMinuteOffset;
-            }
+          // For existing events, use their original sub-minute offset from the lookup
+          if (eventId && subMinuteOffsets[eventId] !== undefined) {
+            return baseTimestamp + subMinuteOffsets[eventId];
           }
           
-          // Fallback: use a small deterministic offset based on position
-          // This ensures consistent ordering for new events
-          return baseTimestamp + 1000; // 1 second offset
+          // For new events, use random 1-60 seconds
+          return baseTimestamp + Math.floor(Math.random() * 60000);
         };
 
         // Step 1: Check all events (driving/on_duty/rest_segment) for moves
@@ -1646,7 +1648,7 @@
         }
 
         return output;
-      }, [statuses, originalStatuses, startDate]);
+      }, [statuses, originalStatuses, startDate, subMinuteOffsets]);
 
       /**
        * Format output as human-readable text
