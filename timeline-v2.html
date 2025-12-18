@@ -2127,6 +2127,38 @@
                       ) : (
                         <div className="compare-mismatch">✗ Mismatch detected - check events above</div>
                       )}
+                      <button
+                        className="dialog-btn cancel"
+                        style={{ marginTop: '12px', width: '100%' }}
+                        onClick={() => {
+                          const debugData = {
+                            originalState: originalStatuses.map(s => ({
+                              id: s.id,
+                              code: s.code,
+                              startMinute: s.startMinute,
+                              duration: s.duration,
+                              originalStartMinute: s.originalStartMinute
+                            })),
+                            currentState: statuses.map(s => ({
+                              id: s.id,
+                              code: s.code,
+                              startMinute: s.startMinute,
+                              duration: s.duration,
+                              originalStartMinute: s.originalStartMinute
+                            })),
+                            output: JSON.parse(outputModal),
+                            comparison: {
+                              left: comparison.left,
+                              right: comparison.right
+                            }
+                          };
+                          navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
+                          setNotification('Debug info copied to clipboard!');
+                          setTimeout(() => setNotification(null), 2000);
+                        }}
+                      >
+                        Copy Debug Info
+                      </button>
                     </div>
                   );
                 })()}
