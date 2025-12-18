@@ -1579,6 +1579,7 @@
 
         // Step 4: Check for NEW rest periods (gaps created by user dragging activities apart)
         // Only create off_duty if there was NO rest segment between these two activities originally
+        let newEventCounter = 0;
         for (let i = 0; i < currentSorted.length - 1; i++) {
           const current = currentSorted[i];
           const next = currentSorted[i + 1];
@@ -1610,7 +1611,8 @@
                   
                   // Only create off_duty if the gap is larger than it was originally
                   if (gapDuration > originalGap) {
-                    output['off_duty'] = toTimestamp(gapStart);
+                    // Use unique key for each new event to avoid overwriting
+                    output[`off_duty_${newEventCounter++}`] = toTimestamp(gapStart);
                   }
                 }
               }
@@ -1654,8 +1656,8 @@
         };
         
         for (const [key, value] of Object.entries(output)) {
-          if (key === 'off_duty') {
-            // New off_duty event
+          if (key.startsWith('off_duty_')) {
+            // New off_duty event (unique key like off_duty_0, off_duty_1, etc.)
             lines.push(`➕ Add off_duty at ${formatTime(value)}`);
           } else if (value === null) {
             // Deletion - find original info
@@ -1728,8 +1730,8 @@
         const simulatedEvents = [...originalEvents];
         
         for (const [key, value] of Object.entries(output)) {
-          if (key === 'off_duty') {
-            // New event - add it
+          if (key.startsWith('off_duty_')) {
+            // New event - add it (unique key like off_duty_0, off_duty_1, etc.)
             simulatedEvents.push({
               id: 'NEW',
               code: 'off_duty',
@@ -1768,8 +1770,8 @@
         const events = [];
         
         for (const [key, value] of Object.entries(output)) {
-          if (key === 'off_duty') {
-            // New off_duty event
+          if (key.startsWith('off_duty_')) {
+            // New off_duty event (unique key like off_duty_0, off_duty_1, etc.)
             events.push({
               _id: null,
               eventCode: 'off_duty',
