@@ -1577,6 +1577,19 @@
           console.log('No deletion candidates found (all effectiveRestDuration >= originalTotalDuration)');
         }
 
+        // Step 3.5: Detect rest_segments that were removed during initial trimming
+        // These are in originalStatuses but not in current statuses
+        const currentIds = new Set(currentSorted.map(s => s.id));
+        for (const original of originalSorted) {
+          if (original.code === 'rest_segment' && !currentIds.has(original.id)) {
+            // This rest_segment was removed (trimmed) - mark for deletion
+            if (!(original.id in output)) {
+              console.log(`Trimmed rest_segment detected: ${original.id} (duration: ${original.duration})`);
+              output[original.id] = null;
+            }
+          }
+        }
+
         // Step 4: Check for NEW rest periods (gaps created by user dragging activities apart)
         // Only create off_duty if there was NO rest segment between these two activities originally
         let newEventCounter = 0;
