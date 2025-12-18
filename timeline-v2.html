@@ -443,8 +443,8 @@
       background: #252540;
       border-radius: 8px;
       padding: 24px;
-      min-width: 550px;
-      max-width: 800px;
+      min-width: 650px;
+      max-width: 900px;
       max-height: 80vh;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
@@ -512,6 +512,7 @@
 
     .compare-side {
       flex: 1;
+      min-width: 0;
       background: rgb(24, 30, 35);
       border-radius: 4px;
       padding: 12px;
@@ -519,13 +520,14 @@
     }
 
     .compare-title {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       color: #7f8c9a;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.03em;
       margin-bottom: 8px;
       padding-bottom: 8px;
       border-bottom: 1px solid #3a3a5a;
+      white-space: nowrap;
     }
 
     .compare-event {
@@ -549,6 +551,10 @@
 
     .compare-event .code.off_duty {
       color: #9b59b6;
+    }
+
+    .compare-event .code.rest_segment {
+      color: #95a5a6;
     }
 
     .compare-event .time {
@@ -1698,9 +1704,8 @@
           return startDate.getTime() + minute * 60 * 1000;
         };
         
-        // LEFT SIDE: Current state (driving/on_duty only, sorted by time)
+        // LEFT SIDE: Current state (all events, sorted by time)
         const currentEvents = statuses
-          .filter(s => s.code === 'driving' || s.code === 'on_duty')
           .map(s => ({
             id: s.id,
             code: s.code,
@@ -1712,7 +1717,6 @@
         // RIGHT SIDE: Original state + output changes applied
         // Start with original events
         const originalEvents = originalStatuses
-          .filter(s => s.code === 'driving' || s.code === 'on_duty')
           .map(s => ({
             id: s.id,
             code: s.code,
@@ -2098,7 +2102,7 @@
                     <div>
                       <div className="compare-container">
                         <div className="compare-side">
-                          <div className="compare-title">Current State (Our Timeline)</div>
+                          <div className="compare-title">Current (Our Timeline)</div>
                           {comparison.left.map((evt, i) => (
                             <div key={i} className="compare-event">
                               <span className={`code ${evt.code}`}>{evt.code}</span>
@@ -2108,7 +2112,7 @@
                           ))}
                         </div>
                         <div className="compare-side">
-                          <div className="compare-title">Original + Changes (Server Result)</div>
+                          <div className="compare-title">Original + Changes (Server)</div>
                           {comparison.right.map((evt, i) => (
                             <div key={i} className="compare-event">
                               <span className={`code ${evt.code}`}>{evt.code}</span>
