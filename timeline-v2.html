@@ -1729,8 +1729,13 @@
           });
         };
         
-        const minuteToTimestamp = (minute) => {
-          return startDate.getTime() + minute * 60 * 1000;
+        const minuteToTimestamp = (minute, eventId) => {
+          const base = startDate.getTime() + minute * 60 * 1000;
+          // Add sub-minute offset if available to preserve original ordering
+          if (eventId && subMinuteOffsets[eventId] !== undefined) {
+            return base + subMinuteOffsets[eventId];
+          }
+          return base;
         };
         
         // LEFT SIDE: Current state + gap-filling rest_segments from output
@@ -1741,11 +1746,12 @@
             if (s.code === 'rest_segment' && s.originalEvents?.[0]?.code) {
               code = s.originalEvents[0].code;
             }
+            const ts = minuteToTimestamp(s.startMinute, s.id);
             return {
               id: s.id,
               code: code,
-              timestamp: minuteToTimestamp(s.startMinute),
-              time: formatTimestamp(minuteToTimestamp(s.startMinute))
+              timestamp: ts,
+              time: formatTimestamp(ts)
             };
           });
         
@@ -1790,11 +1796,12 @@
             if (s.code === 'rest_segment' && s.originalEvents?.[0]?.code) {
               code = s.originalEvents[0].code;
             }
+            const ts = minuteToTimestamp(s.originalStartMinute ?? s.startMinute, s.id);
             return {
               id: s.id,
               code: code,
-              timestamp: minuteToTimestamp(s.originalStartMinute ?? s.startMinute),
-              time: formatTimestamp(minuteToTimestamp(s.originalStartMinute ?? s.startMinute))
+              timestamp: ts,
+              time: formatTimestamp(ts)
             };
           });
         
@@ -1831,7 +1838,7 @@
           left: currentEvents,
           right: simulatedEvents
         };
-      }, [statuses, originalStatuses, startDate]);
+      }, [statuses, originalStatuses, startDate, subMinuteOffsets]);
 
       /**
        * Format output for the API webhook
