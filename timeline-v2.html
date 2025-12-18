@@ -1407,14 +1407,12 @@
           return startDate.getTime() + (minute * 60 * 1000) + Math.floor(Math.random() * 60000);
         };
 
-        // Step 1: Check driving/on_duty for moves
+        // Step 1: Check all events (driving/on_duty/rest_segment) for moves
         for (const status of currentSorted) {
-          if (status.code === 'driving' || status.code === 'on_duty') {
-            if (status.originalStartMinute !== undefined && 
-                status.startMinute !== status.originalStartMinute) {
-              // Status was moved
-              output[status.id] = toTimestamp(status.startMinute);
-            }
+          if (status.originalStartMinute !== undefined && 
+              status.startMinute !== status.originalStartMinute) {
+            // Status was moved
+            output[status.id] = toTimestamp(status.startMinute);
           }
         }
 
