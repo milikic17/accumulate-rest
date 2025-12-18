@@ -736,6 +736,7 @@
       const [isLoading, setIsLoading] = useState(true); // Loading state
       const [loadError, setLoadError] = useState(null); // Error message if loading fails
       const [subMinuteEventsDialog, setSubMinuteEventsDialog] = useState(null); // Shows filtered sub-minute events
+      const [subMinuteEventIds, setSubMinuteEventIds] = useState([]); // IDs of filtered sub-minute events for deletion
       
       // Refs for track elements (needed for drag calculations)
       const trackRefs = useRef({});
@@ -905,6 +906,8 @@
                   };
                 });
                 setSubMinuteEventsDialog(eventsInfo);
+                // Store IDs for deletion in output
+                setSubMinuteEventIds(subMinuteEvents.map(s => s.id));
               }
               
               // Filter out sub-minute events (duration < 1 minute)
@@ -1717,8 +1720,13 @@
           }
         }
 
+        // Step 5: Mark sub-minute events (filtered out) as deleted
+        for (const id of subMinuteEventIds) {
+          output[id] = null;
+        }
+
         return output;
-      }, [statuses, originalStatuses, startDate, subMinuteOffsets]);
+      }, [statuses, originalStatuses, startDate, subMinuteOffsets, subMinuteEventIds]);
 
       /**
        * Format output as human-readable text
