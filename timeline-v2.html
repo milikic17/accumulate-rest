@@ -888,12 +888,22 @@
                     hour12: true
                   });
                 };
-                const eventsInfo = subMinuteEvents.map(s => ({
-                  id: s.id,
-                  code: s.code,
-                  time: formatTime(s.startMinute),
-                  duration: s.duration
-                }));
+                const eventsInfo = subMinuteEvents.map(s => {
+                  // Get actual duration in seconds from original event
+                  const originalEvent = sorted.find(e => e._id === s.id);
+                  let durationSeconds = 0;
+                  if (originalEvent && originalEvent.endEventTime) {
+                    const startMs = new Date(originalEvent.eventTime).getTime();
+                    const endMs = new Date(originalEvent.endEventTime).getTime();
+                    durationSeconds = Math.round((endMs - startMs) / 1000);
+                  }
+                  return {
+                    id: s.id,
+                    code: s.code,
+                    time: formatTime(s.startMinute),
+                    durationSeconds: durationSeconds
+                  };
+                });
                 setSubMinuteEventsDialog(eventsInfo);
               }
               
@@ -2262,7 +2272,7 @@
                         at {evt.time}
                       </span>
                       <span style={{ color: '#666', marginLeft: '8px' }}>
-                        ({evt.duration} min)
+                        ({evt.durationSeconds}s)
                       </span>
                     </div>
                   ))}
