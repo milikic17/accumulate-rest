@@ -825,7 +825,13 @@
           console.log('Driver ID:', driverId, 'Timezone:', ianaTimezone);
           
           // Step 2: Fetch events for this driver
-          const eventsUrl = `https://nestjs.eldsupport.tech/api/web/hos-event?driverId=${driverId}&from=${fromDate}&to=${toDate}`;
+          // Format dates as DD/MM/YYYY URL-encoded for the API
+          const formatDateForApi = (dateStr) => {
+            // dateStr is YYYY/MM/DD, convert to DD/MM/YYYY and URL encode
+            const parts = dateStr.split('/');
+            return encodeURIComponent(`${parts[2]}/${parts[1]}/${parts[0]}`);
+          };
+          const eventsUrl = `https://nestjs.eldsupport.tech/api/web/hos-event/driver/day/${driverId}?from=${formatDateForApi(fromDate)}&to=${formatDateForApi(toDate)}&mode=draft`;
           console.log('Fetching events from:', eventsUrl);
           
           const eventsRes = await fetch(eventsUrl, { method: 'GET', headers });
