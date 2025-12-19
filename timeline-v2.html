@@ -2308,6 +2308,7 @@
                 onGapHover={setHoveredGapId}
                 trackRef={el => trackRefs.current[day] = el}
                 startDate={startDate}
+                timezone={timezone}
               />
             ))}
           </div>
@@ -2803,7 +2804,8 @@
       hoveredGapId, 
       onGapHover, 
       trackRef,
-      startDate
+      startDate,
+      timezone
     }) {
       // Calculate the actual date for this day
       const dayDate = startDate ? new Date(startDate.getTime() + day * 24 * 60 * 60 * 1000) : null;
