@@ -696,9 +696,9 @@
     /**
      * Format date as "Dec 15" style (Central Time)
      */
-    function formatDateLabel(date) {
+    function formatDateLabel(date, tz = 'America/Chicago') {
       return date.toLocaleString('en-US', {
-        timeZone: 'America/Chicago',
+        timeZone: tz,
         month: 'short',
         day: 'numeric'
       });
@@ -737,41 +737,100 @@
       const [loadError, setLoadError] = useState(null); // Error message if loading fails
       const [subMinuteEventsDialog, setSubMinuteEventsDialog] = useState(null); // Shows filtered sub-minute events
       const [subMinuteEventIds, setSubMinuteEventIds] = useState([]); // IDs of filtered sub-minute events for deletion
+      const [ticketId, setTicketId] = useState(null); // Ticket ID from URL
+      const [timezone, setTimezone] = useState('America/Chicago'); // Timezone from ticket (default Central)
       
       // Refs for track elements (needed for drag calculations)
       const trackRefs = useRef({});
 
       /*-------------------------------------------------
         FETCH DATA FROM BACKEND
-        If URL path matches /api/web/hos-event, fetch real data
+        1. Parse ticketId from URL path (/{ticketId})
+        2. Fetch ticket info to get driver and timezone
+        3. Fetch events for that driver
       -------------------------------------------------*/
       useEffect(() => {
         const path = window.location.pathname;
         const search = window.location.search;
+        const params = new URLSearchParams(search);
         
-        if (!path.startsWith('/api/web/hos-event')) {
-          setLoadError('Invalid URL path. Expected /api/web/hos-event/...');
+        // Extract ticketId from path (e.g., /694492d0b6fda756044b33a7)
+        const pathTicketId = path.replace(/^\//, '').split('/')[0];
+        if (!pathTicketId || pathTicketId.length < 20) {
+          setLoadError('Invalid URL. Expected /{ticketId} in path');
           setIsLoading(false);
           return;
         }
         
-        const backendUrl = `https://nestjs.eldsupport.tech${path}${search}`;
-        console.log('Fetching from:', backendUrl);
+        setTicketId(pathTicketId);
+        console.log('Ticket ID from URL:', pathTicketId);
         
-        fetch(backendUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json, text/plain, */*',
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY0ZWNkYTVmYTIwODZjZTVkOGE3NWY4MCIsImlhdCI6MTc2NTI3NzYzNX0.FlTk_ndQUPG4w-5XiNd_GIV_EG4182vdlPcALiMnFQc',
-            'Origin': 'https://v2.eldsupport.tech',
-            'Referer': 'https://v2.eldsupport.tech/'
+        // Parse date range from query params or use last 7 days
+        let fromDate, toDate;
+        if (params.get('from') && params.get('to')) {
+          // Format: DD/MM/YYYY (URL encoded as DD%2FMM%2FYYYY)
+          const fromParts = params.get('from').split('/');
+          const toParts = params.get('to').split('/');
+          fromDate = `${fromParts[2]}/${fromParts[1]}/${fromParts[0]}`; // Convert to YYYY/MM/DD
+          toDate = `${toParts[2]}/${toParts[1]}/${toParts[0]}`;
+        } else {
+          // Default: current day and past 7 days
+          const today = new Date();
+          const weekAgo = new Date(today);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          fromDate = weekAgo.toISOString().split('T')[0].replace(/-/g, '/');
+          toDate = today.toISOString().split('T')[0].replace(/-/g, '/');
+        }
+        console.log('Date range:', fromDate, 'to', toDate);
+        
+        const headers = {
+          'Accept': 'application/json, text/plain, */*',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY0ZWNkYTVmYTIwODZjZTVkOGE3NWY4MCIsImlhdCI6MTc2NTI3NzYzNX0.FlTk_ndQUPG4w-5XiNd_GIV_EG4182vdlPcALiMnFQc',
+          'Origin': 'https://v2.eldsupport.tech',
+          'Referer': 'https://v2.eldsupport.tech/'
+        };
+        
+        // Async function to fetch data
+        const fetchData = async () => {
+          // Step 1: Fetch ticket info
+          const ticketUrl = `https://nestjs.eldsupport.tech/api/web/ticket/${pathTicketId}?mode=draft`;
+          console.log('Fetching ticket info from:', ticketUrl);
+          
+          const ticketRes = await fetch(ticketUrl, { method: 'GET', headers });
+          if (!ticketRes.ok) throw new Error(`Ticket fetch failed: HTTP ${ticketRes.status}`);
+          const ticketData = await ticketRes.json();
+          console.log('Ticket response:', ticketData);
+          
+          const driverId = ticketData.data?.driver;
+          const ticketTimezone = ticketData.timezone;
+          
+          if (!driverId) {
+            throw new Error('No driver ID found in ticket');
           }
-        })
-          .then(res => {
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.json();
-          })
-          .then(data => {
+          
+          // Map timezone name to IANA timezone
+          let ianaTimezone = 'America/Chicago'; // default
+          if (ticketTimezone) {
+            const tzMap = {
+              'Central Time': 'America/Chicago',
+              'Eastern Time': 'America/New_York',
+              'Mountain Time': 'America/Denver',
+              'Pacific Time': 'America/Los_Angeles',
+              'Alaska Time': 'America/Anchorage',
+              'Hawaii Time': 'Pacific/Honolulu'
+            };
+            ianaTimezone = tzMap[ticketTimezone] || ticketTimezone;
+          }
+          setTimezone(ianaTimezone);
+          console.log('Driver ID:', driverId, 'Timezone:', ianaTimezone);
+          
+          // Step 2: Fetch events for this driver
+          const eventsUrl = `https://nestjs.eldsupport.tech/api/web/hos-event?driverId=${driverId}&from=${fromDate}&to=${toDate}`;
+          console.log('Fetching events from:', eventsUrl);
+          
+          const eventsRes = await fetch(eventsUrl, { method: 'GET', headers });
+          if (!eventsRes.ok) throw new Error(`Events fetch failed: HTTP ${eventsRes.status}`);
+          const data = await eventsRes.json();
               console.log('Backend response:', data);
               
               // Response format: { data: [events] }
@@ -881,7 +940,7 @@
                 const formatTime = (minute) => {
                   const date = new Date(dayStart.getTime() + minute * 60 * 1000);
                   return date.toLocaleString('en-US', {
-                    timeZone: 'America/Chicago',
+                    timeZone: ianaTimezone,
                     month: 'short',
                     day: 'numeric',
                     hour: 'numeric',
@@ -979,12 +1038,14 @@
               setOriginalStatuses(mergedStatuses);
               setSubMinuteOffsets(offsets); // Store original sub-minute offsets for timestamp precision
               setIsLoading(false);
-            })
-            .catch(err => {
-              console.error('Fetch error:', err);
-              setLoadError(`Failed to load: ${err.message}`);
-              setIsLoading(false);
-            });
+        };
+        
+        // Execute the async function
+        fetchData().catch(err => {
+          console.error('Fetch error:', err);
+          setLoadError(`Failed to load: ${err.message}`);
+          setIsLoading(false);
+        });
       }, []);
 
       /*-------------------------------------------------
@@ -1739,7 +1800,7 @@
         const formatTime = (timestamp) => {
           const date = new Date(timestamp);
           return date.toLocaleString('en-US', { 
-            timeZone: 'America/Chicago',
+            timeZone: timezone,
             month: 'short', 
             day: 'numeric', 
             hour: 'numeric', 
@@ -1751,7 +1812,7 @@
         const formatMinute = (minute) => {
           const date = new Date(startDate.getTime() + minute * 60 * 1000);
           return date.toLocaleString('en-US', { 
-            timeZone: 'America/Chicago',
+            timeZone: timezone,
             month: 'short', 
             day: 'numeric', 
             hour: 'numeric', 
@@ -1787,7 +1848,7 @@
         }
         
         return lines.join('\n');
-      }, [statuses, originalStatuses, startDate]);
+      }, [statuses, originalStatuses, startDate, timezone]);
 
       /**
        * Generate comparison data: current state vs original+changes
@@ -1798,7 +1859,7 @@
         const formatTimestamp = (timestamp) => {
           const date = new Date(timestamp);
           return date.toLocaleString('en-US', { 
-            timeZone: 'America/Chicago',
+            timeZone: timezone,
             month: 'short', 
             day: 'numeric', 
             hour: 'numeric', 
@@ -1945,7 +2006,7 @@
           left: currentEvents,
           right: simulatedEvents
         };
-      }, [statuses, originalStatuses, startDate, subMinuteOffsets]);
+      }, [statuses, originalStatuses, startDate, subMinuteOffsets, timezone]);
 
       /**
        * Format output for the API webhook
@@ -2000,10 +2061,10 @@
         }
         
         return {
-          ticketId: '694492d0b6fda756044b33a7',
+          ticketId: ticketId,
           events
         };
-      }, [statuses]);
+      }, [statuses, ticketId]);
 
       /**
        * Handle Generate Output button click
@@ -2740,7 +2801,7 @@
     }) {
       // Calculate the actual date for this day
       const dayDate = startDate ? new Date(startDate.getTime() + day * 24 * 60 * 60 * 1000) : null;
-      const dayLabel = dayDate ? formatDateLabel(dayDate) : `Day ${day + 1}`;
+      const dayLabel = dayDate ? formatDateLabel(dayDate, timezone) : `Day ${day + 1}`;
       
       return (
         <div className="day-row">
